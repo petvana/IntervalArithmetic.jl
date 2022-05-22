@@ -1,39 +1,27 @@
 # This file is part of the IntervalArithmetic.jl package; MIT licensed
 
-#=  This file contains functions not specified in the IEEE Std 1788-2015,
-    extending boolean operations defined for reals to intervals.
-
-    This is different from what is described in sections 9.5 of the
-    IEEE Std 1788-2015 (Boolean functions of intervals), since we deal here
-    with what is needed for drop-in replacement of floats by intervals,
-    and not what is reasonnable to do with intervals in a separate execution
-    environment.
-
-    Essentially, julia is better at composability and we are more ambitious
-    that what the standard ever expected, so we have some extra problems
-    to solve.
+#=  This file contains boolean operations defined for intervals.
 
     We use a trait system, defining the operation with an extra
-    `PointwisePolitic` argument defining how it should be handled.
+    `PointwisePolicy` argument defining how it should be handled.
 
-    The default operations use `IntervalArithmetic.pointwise_politic()`,
+    The default operations use `IntervalArithmetic.pointwise_policy()`,
     so in order to change the default behavior this function has to be
     redefined.
-
-    We define every operations using the default `PointwisePolitic{:ternary}()`
-    and then use it to define all the others.
 =#
 """
-    PointwisePolitic{P}
+    PointwisePolicy{P}
 
-Define which politic we use to extend pointwise comparison of
+Define which policy we use to extend pointwise comparison of
 
-Valid value for the politic identifier `P` are
+Valid value for the policy identifier `P` are
+    - `ieee1788` (default): Boolean operations as defined in the standard,
+      see section 10.5.10
     - `:is_all` : A boolean operation is extended by asking "is it true for
         all elements of the interval(s) involved".
         This is self-consistent, but breaks the usual rules for negation of
         boolean operations.
-        For example with this politic, `((-1..3) == 0) == false` because it
+        For example with this policy, `((-1..3) == 0) == false` because it
         answers the question "are all elements in (-1..3) equal to zero".
         However we also have `((-1..3) != 0) == false`, contrary to what is
         usually expected for the symbols `==` and `!=`.
@@ -43,14 +31,14 @@ Valid value for the politic identifier `P` are
         possible outcome as a `BooleanInterval`.
         This is safe but very strict, always erroring when an interval is used
         in a conditional statement.
-    - `:ternary` (default) : With this politics return `missing` when the
+    - `:ternary`: With this policys return `missing` when the
         boolean operation does not return the same answer for all elements
         of the involved interval(s).
         This only causes error in conditional statements when hitting `missing`.
         When it does not error it is safe.
 
-The current pointwise politic can be changed by overriding the function
-`IntervalArithmetic.pointwise_politic()`.
+The current pointwise policy can be changed by overriding the function
+`IntervalArithmetic.pointwise_policy()`.
 
 Example
 =======
@@ -62,7 +50,7 @@ Example
 :ternary  | missing       | missing       | false       | true        |
 
 """
-struct PointwisePolitic{P} end
+struct PointwisePolicy{P} end
 
 const pointwise_bool_operations = (
     :(==), :(!=), :<, :(<=), :>, :(>=)
@@ -74,52 +62,52 @@ const pointwise_bool_functions = (
 
 ## :ieee1788
 # See Table 10.3
-==(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = x.lo == y.lo && x.hi == y.hi
+==(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = x.lo == y.lo && x.hi == y.hi
 
-<(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = isstrictless(x, y)
+<(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = isstrictless(x, y)
 
-<=(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = isweaklyless(x, y)
+<=(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = isweaklyless(x, y)
 
-!=(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = !(==(PointwisePolitic{:ieee1788}(), x, y))
->(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = !<=(PointwisePolitic{:ieee1788}(), x, y)
->=(::PointwisePolitic{:ieee1788}, x::Interval, y::Interval) = !<(PointwisePolitic{:ieee1788}(), x, y)
+!=(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = !(==(PointwisePolicy{:ieee1788}(), x, y))
+>(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = !<=(PointwisePolicy{:ieee1788}(), x, y)
+>=(::PointwisePolicy{:ieee1788}, x::Interval, y::Interval) = !<(PointwisePolicy{:ieee1788}(), x, y)
 
 # Boolean functions
 # NOTE this interacts with flavors.
-isinf(::PointwisePolitic{:ieee1788}, x::Interval) = contains_infinity(x) && isthin(x)
+isinf(::PointwisePolicy{:ieee1788}, x::Interval) = contains_infinity(x) && isthin(x)
 
-isfinite(::PointwisePolitic{:ieee1788}, x::Interval) = !isinf(PointwisePolitic{:ieee1788}(), x)
-iszero(::PointwisePolitic{:ieee1788}, x::Interval) = isthinzero(x)
+isfinite(::PointwisePolicy{:ieee1788}, x::Interval) = !isinf(PointwisePolicy{:ieee1788}(), x)
+iszero(::PointwisePolicy{:ieee1788}, x::Interval) = isthinzero(x)
 
-isinteger(::PointwisePolitic{:ieee1788}, x::Interval) = (x.lo == x.hi) && isinteger(x.lo)
+isinteger(::PointwisePolicy{:ieee1788}, x::Interval) = (x.lo == x.hi) && isinteger(x.lo)
 
 
 ## :ternary
-function ==(::PointwisePolitic{:ternary}, x::Interval, y::Interval)
+function ==(::PointwisePolicy{:ternary}, x::Interval, y::Interval)
     isthin(x) && isthin(y) && x.lo == y.lo && return true
     (x.hi < y.lo || x.lo > y.hi) && return false
     return missing
 end
 
-function <(::PointwisePolitic{:ternary}, x::Interval, y::Interval)
+function <(::PointwisePolicy{:ternary}, x::Interval, y::Interval)
     strictprecedes(x, y) && return true
     precedes(y, x) && return false
     return missing
 end
 
-function <=(::PointwisePolitic{:ternary}, x::Interval, y::Interval)
+function <=(::PointwisePolicy{:ternary}, x::Interval, y::Interval)
     precedes(x, y) && return true
     strictprecedes(y, x) && return false
     return missing
 end
 
-!=(::PointwisePolitic{:ternary}, x::Interval, y::Interval) = !(==(PointwisePolitic{:ternary}(), x, y))
->(::PointwisePolitic{:ternary}, x::Interval, y::Interval) = !<=(PointwisePolitic{:ternary}(), x, y)
->=(::PointwisePolitic{:ternary}, x::Interval, y::Interval) = !<(PointwisePolitic{:ternary}(), x, y)
+!=(::PointwisePolicy{:ternary}, x::Interval, y::Interval) = !(==(PointwisePolicy{:ternary}(), x, y))
+>(::PointwisePolicy{:ternary}, x::Interval, y::Interval) = !<=(PointwisePolicy{:ternary}(), x, y)
+>=(::PointwisePolicy{:ternary}, x::Interval, y::Interval) = !<(PointwisePolicy{:ternary}(), x, y)
 
 # Boolean functions
 # NOTE this interacts with flavors.
-function isinf(::PointwisePolitic{:ternary}, x::Interval)
+function isinf(::PointwisePolicy{:ternary}, x::Interval)
     if contains_infinity(x)
         isthin(x) && return true
         return missing
@@ -128,10 +116,10 @@ function isinf(::PointwisePolitic{:ternary}, x::Interval)
     return false
 end
 
-isfinite(::PointwisePolitic{:ternary}, x::Interval) = !isinf(PointwisePolitic{:ternary}(), x)
-iszero(::PointwisePolitic{:ternary}, x::Interval) = ==(PointwisePolitic{:ternary}(), x, 0)
+isfinite(::PointwisePolicy{:ternary}, x::Interval) = !isinf(PointwisePolicy{:ternary}(), x)
+iszero(::PointwisePolicy{:ternary}, x::Interval) = ==(PointwisePolicy{:ternary}(), x, 0)
 
-function isinteger(::PointwisePolitic{:ternary}, x::Interval)
+function isinteger(::PointwisePolicy{:ternary}, x::Interval)
     (x.lo == x.hi) && isinteger(x.lo) && return true
     floor(x.hi) < ceil(x.lo) && return false
     return missing
@@ -172,30 +160,30 @@ function show(io::IO, bi::BooleanInterval)
 end
 
 for op in pointwise_bool_operations
-    @eval function $op(::PointwisePolitic{:interval}, x::Interval, y::Interval)
-        return BooleanInterval($op(PointwisePolitic{:ternary}(), x, y))
+    @eval function $op(::PointwisePolicy{:interval}, x::Interval, y::Interval)
+        return BooleanInterval($op(PointwisePolicy{:ternary}(), x, y))
     end
 end
 
 for f in pointwise_bool_functions
-    @eval function $f(::PointwisePolitic{:interval}, x::Interval)
-        return BooleanInterval($f(PointwisePolitic{:ternary}(), x))
+    @eval function $f(::PointwisePolicy{:interval}, x::Interval)
+        return BooleanInterval($f(PointwisePolicy{:ternary}(), x))
     end
 end
 
 
 ## :is_all
 for op in pointwise_bool_operations
-    @eval function $op(::PointwisePolitic{:is_all}, x::Interval, y::Interval)
-        ternary_res = $op(PointwisePolitic{:ternary}(), x, y)
+    @eval function $op(::PointwisePolicy{:is_all}, x::Interval, y::Interval)
+        ternary_res = $op(PointwisePolicy{:ternary}(), x, y)
         ismissing(ternary_res) && return false
         return ternary_res
     end
 end
 
 for f in pointwise_bool_functions
-    @eval function $f(::PointwisePolitic{:is_all}, x::Interval)
-        ternary_res = $f(PointwisePolitic{:ternary}(), x)
+    @eval function $f(::PointwisePolicy{:is_all}, x::Interval)
+        ternary_res = $f(PointwisePolicy{:ternary}(), x)
         ismissing(ternary_res) && return false
         return ternary_res
     end
@@ -204,25 +192,25 @@ end
 
 ## Number-interval comparisons
 for op in pointwise_bool_operations
-    @eval function $op(P::PointwisePolitic, x::F, y::Real) where {F<:Interval}
+    @eval function $op(P::PointwisePolicy, x::F, y::Real) where {F<:Interval}
         return $op(P, x, F(y))
     end
 
-    @eval function $op(P::PointwisePolitic, x::Real, y::F) where {F<:Interval}
+    @eval function $op(P::PointwisePolicy, x::Real, y::F) where {F<:Interval}
         return $op(P, F(x), y)
     end
 end
 
 
 ## Default behaviors
-pointwise_politic() = PointwisePolitic{:ieee1788}()
+pointwise_policy() = PointwisePolicy{:ieee1788}()
 
 for op in pointwise_bool_operations
-    @eval $op(x::Interval, y::Interval) = $op(pointwise_politic(), x, y)
-    @eval $op(x::Interval, y::Real) = $op(pointwise_politic(), x, y)
-    @eval $op(x::Real, y::Interval) = $op(pointwise_politic(), x, y)
+    @eval $op(x::Interval, y::Interval) = $op(pointwise_policy(), x, y)
+    @eval $op(x::Interval, y::Real) = $op(pointwise_policy(), x, y)
+    @eval $op(x::Real, y::Interval) = $op(pointwise_policy(), x, y)
 end
 
 for f in pointwise_bool_functions
-    @eval $f(x::Interval) = $f(pointwise_politic(), x)
+    @eval $f(x::Interval) = $f(pointwise_policy(), x)
 end
